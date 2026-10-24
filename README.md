@@ -13,6 +13,46 @@ a temporary, in-memory model update after an explicit reveal, and Stage 6 adds
 five in-memory spread models and one suggested candidate profile to test — none
 of which ever overwrite the saved model.
 
+## Quickstart (for reviewers)
+
+The raw eMOLT data, the generated splits, and the trained model are **not**
+tracked in Git (they are local build artifacts). From a clean clone, run these
+steps from the project root to build everything and launch the app:
+
+```bash
+# 1. Install dependencies (Python 3.11+ recommended)
+python -m pip install -r requirements.txt
+
+# 2. Download the eMOLT starter ZIP into Data/raw/
+#    URL: https://hackachusetts2026.vercel.app/kits/emolt.zip
+#    Save it exactly as Data/raw/emolt.zip
+#    (curl example; any download method works)
+curl -L https://hackachusetts2026.vercel.app/kits/emolt.zip -o Data/raw/emolt.zip
+
+# 3. Build the data + model artifacts (Stage 1 -> 2 -> 3)
+python Scripts/prepare_data.py     # Data/processed/
+python Scripts/split_replay.py     # Data/splits/
+python Scripts/train_model.py      # Results/model.joblib + metadata
+
+# 4. Launch the local app (opens in your browser)
+streamlit run app.py
+```
+
+PowerShell note (Windows): step 2 can use
+`Invoke-WebRequest https://hackachusetts2026.vercel.app/kits/emolt.zip -OutFile Data/raw/emolt.zip`.
+
+Once the app is running, select a candidate profile to see the Stage 3
+prediction, the five-model spread band, and the suggested next measurement.
+Press **Reveal actual measurements** to reveal that one profile's hidden
+readings and the updated spread/suggestion, and **Reset replay** to return to
+the pre-reveal view.
+
+To run the test suite instead:
+
+```bash
+python -m pytest
+```
+
 ## What Stage 1 does
 
 The Stage 1 pipeline turns the released eMOLT starter archive into three
