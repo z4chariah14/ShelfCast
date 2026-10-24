@@ -73,6 +73,7 @@ UPDATED_TEAL = [38, 150, 142]
 WARMER_RED = [200, 70, 60]
 COOLER_BLUE = [48, 96, 176]
 SPREAD_MIST = [138, 172, 196]  # the shaded five-model spread band
+SELECTED_PLUM = [124, 58, 132]  # highlight for the currently selected profile
 
 NEARBY_DEPTH = reveal.NEARBY_DEPTH_M  # 20 m, a single requested prediction level
 
@@ -102,13 +103,11 @@ def _page_setup() -> None:
     )
     st.title("\U0001f30a ShelfCast")
     st.caption(
-        "A local historical replay of the Stage 3 temperature predictor, with a "
-        "reveal loop, a five-model spread band (an exploratory range, not a "
-        "calibrated confidence interval), and one suggested candidate profile to "
-        "test. The model was trained only on candidate profiles that ended "
-        "before the 2024-08-06 00:00 UTC cutoff; the hidden profiles you can "
-        "reveal started on or after it. This is a replay, not a live or future "
-        "forecast."
+        "Historical replay of a coastal-temperature predictor \u2014 **not** a live "
+        "or future forecast. Pick a profile, see the prediction and five-model "
+        "spread, then reveal its hidden readings to watch the model update. "
+        "Trained on profiles that ended before the 2024-08-06 00:00 UTC cutoff; "
+        "revealable profiles started on or after it."
     )
 
 
@@ -156,29 +155,28 @@ def _predicted_curve(model_obj, site: dict, label: str) -> pd.DataFrame:
 def _render_map(
     train_df: pd.DataFrame,
     sites_df: pd.DataFrame,
+    selected_site: dict,
+    selected_id: int,
     nearby_marker: dict | None = None,
 ) -> None:
     st.subheader("Locations")
     legend = (
-        "Recorded positions only. "
-        f"<span style='color:rgb({SEA_FOAM[0]},{SEA_FOAM[1]},{SEA_FOAM[2]})'>"
-        "\u25cf training locations</span> and "
+        f"<span style='color:rgb({SELECTED_PLUM[0]},{SELECTED_PLUM[1]},{SELECTED_PLUM[2]})'>"
+        "\u25c6 selected profile</span> \u00b7 "
         f"<span style='color:rgb({CANDIDATE_GOLD[0]},{CANDIDATE_GOLD[1]},{CANDIDATE_GOLD[2]})'>"
-        "\u25cf candidate profiles</span> (replay sites)."
+        "\u25cf candidate profiles</span> \u00b7 "
+        f"<span style='color:rgb({SEA_FOAM[0]},{SEA_FOAM[1]},{SEA_FOAM[2]})'>"
+        "\u25cf training locations</span>"
     )
     if nearby_marker is not None:
         legend += (
-            " After a reveal, the nearby still-hidden site is recolored by its "
-            f"predicted-temperature change at {NEARBY_DEPTH:.0f} m "
+            f" \u00b7 nearby still-hidden site recolored by its predicted change "
+            f"at {NEARBY_DEPTH:.0f} m "
             f"(<span style='color:rgb({WARMER_RED[0]},{WARMER_RED[1]},{WARMER_RED[2]})'>"
             "\u25cf warmer</span> / "
             f"<span style='color:rgb({COOLER_BLUE[0]},{COOLER_BLUE[1]},{COOLER_BLUE[2]})'>"
-            "\u25cf cooler</span>)."
+            "\u25cf cooler</span>)"
         )
-    legend += (
-        " Candidate markers are **provisional candidate profiles**, never "
-        "verified fishing tows or casts."
-    )
     st.markdown(legend, unsafe_allow_html=True)
 
     all_lat = pd.concat([train_df["latitude"], sites_df["latitude"]])
@@ -194,16 +192,16 @@ def _render_map(
         "ScatterplotLayer",
         data=train_df,
         get_position="[longitude, latitude]",
-        get_fill_color=[SEA_FOAM[0], SEA_FOAM[1], SEA_FOAM[2], 140],
-        get_radius=220,
+        get_fill_color=[SEA_FOAM[0], SEA_FOAM[1], SEA_FOAM[2], 130],
+        get_radius=200,
         pickable=False,
     )
     candidate_layer = pdk.Layer(
         "ScatterplotLayer",
         data=sites_df,
         get_position="[longitude, latitude]",
-        get_fill_color=[CANDIDATE_GOLD[0], CANDIDATE_GOLD[1], CANDIDATE_GOLD[2], 220],
-        get_radius=320,
+        get_fill_color=[CANDIDATE_GOLD[0], CANDIDATE_GOLD[1], CANDIDATE_GOLD[2], 200],
+        get_radius=300,
         pickable=True,
     )
     layers = [training_layer, candidate_layer]
@@ -230,6 +228,38 @@ def _render_map(
             )
         }
 
+    # Selected-profile highlight drawn last so it sits on top: a plum ring plus
+    # a bright core make the current site unmistakable during the demo.
+    selected_df = pd.DataFrame(
+        [
+            {
+                "longitude": selected_site["longitude"],
+                "latitude": selected_site["latitude"],
+                "profile_id": int(selected_id),
+            }
+        ]
+    )
+    selected_halo = pdk.Layer(
+        "ScatterplotLayer",
+        data=selected_df,
+        get_position="[longitude, latitude]",
+        get_fill_color=[SELECTED_PLUM[0], SELECTED_PLUM[1], SELECTED_PLUM[2], 70],
+        get_radius=760,
+        pickable=False,
+    )
+    selected_core = pdk.Layer(
+        "ScatterplotLayer",
+        data=selected_df,
+        get_position="[longitude, latitude]",
+        get_fill_color=[SELECTED_PLUM[0], SELECTED_PLUM[1], SELECTED_PLUM[2], 255],
+        get_line_color=[255, 255, 255, 255],
+        get_radius=360,
+        line_width_min_pixels=2,
+        stroked=True,
+        pickable=True,
+    )
+    layers.extend([selected_halo, selected_core])
+
     deck = pdk.Deck(
         map_style="light",
         initial_view_state=view_state,
@@ -237,6 +267,10 @@ def _render_map(
         tooltip=tooltip,
     )
     st.pydeck_chart(deck, width="stretch")
+    st.caption(
+        "Recorded positions only. Candidate markers are **provisional candidate "
+        "profiles** inferred from position and time \u2014 never verified tows or casts."
+    )
 
 
 def _render_prediction(model_obj, site: dict, profile_id: int) -> None:
@@ -249,12 +283,7 @@ def _render_prediction(model_obj, site: dict, profile_id: int) -> None:
     st.subheader(
         f"Predicted temperature at depth \u2014 candidate profile {profile_id}"
     )
-    st.caption(
-        "This chart shows the original saved model's predictions only, at the "
-        "requested prediction levels (not a claim about the actual bottom "
-        "depth). It is not a forecast and carries no uncertainty or confidence "
-        "claim."
-    )
+    st.caption("Saved-model prediction. Not a forecast or a confidence claim.")
     chart = (
         alt.Chart(table)
         .mark_line(
@@ -287,10 +316,8 @@ def _render_spread(models, site: dict, profile_id: int) -> None:
     band = spread.spread_table(models, site, list(DEFAULT_DEPTH_GRID))
     st.subheader(f"Five-model spread \u2014 candidate profile {profile_id}")
     st.caption(
-        "Spread across five models \u2014 an exploratory measure, not a "
-        "calibrated confidence interval. Each model was fit by resampling whole "
-        "candidate profiles. Depths are requested prediction levels, not a claim "
-        "about actual bottom depth."
+        "Range across five models (resampling whole profiles). Exploratory \u2014 "
+        "**not** a calibrated confidence interval. Navy line = saved-model prediction."
     )
     area = (
         alt.Chart(band)
@@ -365,9 +392,8 @@ def _render_suggestion(
         f"about temperature at {levels}."
     )
     right.caption(
-        "The score is the summed min-to-max prediction spread across the five "
-        f"models at {levels}. Predictions only \u2014 this candidate's actual "
-        "measurements are never read."
+        f"Score = summed min-to-max model spread at {levels}. From predictions "
+        "only; this candidate's measurements are never read."
     )
 
 
@@ -422,10 +448,8 @@ def _render_selected_reveal_chart(
     )
     st.subheader(f"Revealed measurements \u2014 candidate profile {profile_id}")
     st.caption(
-        "Coral diamonds are the revealed actual readings at their true recorded "
-        "depths (not snapped to the requested prediction levels). Lines are the "
-        "original and the temporary updated model predictions at the requested "
-        "prediction levels."
+        "Coral diamonds = actual readings at their true recorded depths. "
+        "Navy = original prediction, teal = updated (after this profile)."
     )
     st.altair_chart((lines + points).properties(height=400), width="stretch")
 
@@ -438,9 +462,8 @@ def _render_nearby(model_obj, temp_model, nearby_site: dict, nearby_id: int) -> 
 
     st.subheader(f"Nearby still-hidden candidate profile {nearby_id}")
     st.caption(
-        "Predictions only \u2014 this site's actual measurements are never read. "
-        f"The map marker and the metric below show the predicted change at "
-        f"{NEARBY_DEPTH:.0f} m."
+        f"Predicted change at {NEARBY_DEPTH:.0f} m only \u2014 this site's actual "
+        "measurements are never read (still hidden)."
     )
     left, right = st.columns([3, 2])
     chart = (
@@ -493,7 +516,7 @@ def _render_nearby(model_obj, temp_model, nearby_site: dict, nearby_id: int) -> 
 
 
 def _render_context(metadata: dict) -> None:
-    with st.expander("Sources, units, and limitations", expanded=True):
+    with st.expander("Sources, units, and limitations", expanded=False):
         st.markdown(
             "- **Units:** temperature in degrees Celsius (\u00b0C), depth in metres (m).\n"
             "- **Historical replay:** training candidate profiles ended before the "
@@ -549,10 +572,11 @@ def main() -> None:
     for key in reveal.REVEAL_STATE_KEYS:
         st.session_state.setdefault(key, None)
 
-    st.subheader("Select a candidate profile")
+    st.subheader("1 \u00b7 Pick a candidate profile")
     profile_ids = sorted(int(p) for p in sites_df["profile_id"].unique())
+    sel_col, ctl_col = st.columns([2, 3])
     profile_id = int(
-        st.selectbox(
+        sel_col.selectbox(
             "Candidate profile id",
             options=profile_ids,
             help="A provisional candidate profile from the Stage 2 replay set.",
@@ -570,10 +594,16 @@ def main() -> None:
         st.stop()
         return
 
-    # Reveal / reset controls.
-    c1, c2, _ = st.columns([1, 1, 3])
-    reveal_clicked = c1.button("Reveal actual measurements", type="primary")
-    reset_clicked = c2.button("Reset replay")
+    # Reveal / reset controls, grouped beside the picker so the action is one
+    # glance from the selection.
+    ctl_col.write("")  # vertical spacer to align buttons with the selectbox
+    b1, b2 = ctl_col.columns(2)
+    reveal_clicked = b1.button(
+        "\U0001f50d Reveal actual measurements",
+        type="primary",
+        width="stretch",
+    )
+    reset_clicked = b2.button("\u21ba Reset replay", width="stretch")
     if reset_clicked:
         reveal.reset_reveal_state(st.session_state, None)
 
@@ -617,6 +647,20 @@ def main() -> None:
         and temp_model is not None
     )
 
+    # Phase banner: make the predict -> reveal -> update sequence obvious.
+    if has_reveal:
+        st.success(
+            f"**Step 3 \u00b7 Updated** \u2014 revealed candidate profile {profile_id}'s "
+            "actual readings and refit a temporary model. Compare the original and "
+            "updated curves below, then **Reset replay** to step back."
+        )
+    else:
+        st.info(
+            f"**Step 2 \u00b7 Predicted** \u2014 showing the saved model's prediction and "
+            f"the five-model spread for candidate profile {profile_id}. Press "
+            "**Reveal actual measurements** to see the hidden readings and the update."
+        )
+
     nearby_marker = None
     if has_reveal:
         after_time = reveal.revealed_final_time(revealed_df)
@@ -627,7 +671,7 @@ def main() -> None:
                 model_obj, temp_model, nearby_site, int(nearby_id)
             )
 
-    _render_map(train_df, sites_df, nearby_marker)
+    _render_map(train_df, sites_df, site, profile_id, nearby_marker)
 
     # Stage 6 spread + suggestion. Before a reveal these use the cached five
     # pre-reveal models and the selected site's recorded start time as the
