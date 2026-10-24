@@ -1,21 +1,32 @@
-"""ShelfCast Stage 4 local viewer (Streamlit).
+"""ShelfCast Stage 5 local viewer (Streamlit) -- the reveal loop.
 
 Launch from the project root:
 
     streamlit run app.py
 
-A thin, read-only viewer over the Stage 3 artifacts. It loads the saved model
-and metadata from Results/, shows training and candidate-profile locations on a
-map, lets you pick a candidate profile, and charts the Stage 3 predicted
-temperatures at the declared standard depths for that site's recorded location
-and UTC start time. It reuses shelfcast.model.predict_temperatures unchanged, so
-the chart matches the Stage 3 prediction CLI exactly.
+Stage 4 was a read-only predicted-temperature viewer. Stage 5 adds a controlled
+reveal loop on top of it: select a provisional candidate profile, see the Stage 3
+predicted curve, then press "Reveal actual measurements" to reveal that ONE
+profile's hidden historical readings. The app overlays the real readings at their
+true recorded depths, fits an in-memory temporary model from the original
+training rows plus only that profile's revealed rows, and shows the original vs
+updated predicted curves for the selected site plus a before/after comparison,
+map-marker update, and numeric prediction change at 20 m for one nearby
+still-hidden candidate site. A "Reset replay" button returns to the pre-reveal
+state and the original saved model.
 
-Data boundary (carried forward from Stage 3): this app references only the
-training points, the candidate-site table, and the Results/ artifacts. It never
-opens Data/splits/heldout_points.csv or Data/processed/profile_summary.csv, and
-it never displays a hidden temperature or depth. It adds no retraining,
-uncertainty, next-site recommendation, forecast, or deployment.
+Data boundary: Data/splits/heldout_points.csv is opened ONLY by
+shelfcast.reveal.read_revealed_profile, only after the reveal click, and only for
+the selected profile_id's rows. Every pre-reveal path (startup, map, cache,
+selection, pre-reveal prediction) uses shelfcast/viewer.py, which never opens the
+heldout file or the hidden columns of profile_summary.csv. The temporary model is
+held in memory only and is NEVER written over Results/model.joblib.
+
+Historical replay: training candidate profiles ended (end_time) strictly before
+the 2024-08-06T00:00:00Z UTC cutoff; the selected hidden profile started
+(start_time) on or after it. This is a replay, not a live or future forecast,
+with no uncertainty bands, confidence claims, next-site recommendations, or
+deployment.
 
 Groups are provisional CANDIDATE PROFILES inferred from recorded position and
 time proximity -- never verified fishing tows or casts.
@@ -34,14 +45,20 @@ import pandas as pd
 import pydeck as pdk
 import streamlit as st
 
-from shelfcast import viewer
+from shelfcast import reveal, viewer
 from shelfcast.config import DEFAULT_DEPTH_GRID
-from shelfcast.model import lookup_candidate_site
+from shelfcast.model import lookup_candidate_site, predict_temperatures
 
 # Ocean palette -- restrained, declarative.
 DEEP_NAVY = [12, 44, 84]
 SEA_FOAM = [86, 168, 190]
 CANDIDATE_GOLD = [224, 168, 72]
+ACTUAL_CORAL = [214, 92, 84]
+UPDATED_TEAL = [38, 150, 142]
+WARMER_RED = [200, 70, 60]
+COOLER_BLUE = [48, 96, 176]
+
+NEARBY_DEPTH = reveal.NEARBY_DEPTH_M  # 20 m, a single requested prediction level
 
 ATTRIBUTION = (
     "Ocean temperature observations from the eMOLT (Environmental Monitors on "
@@ -52,34 +69,31 @@ ATTRIBUTION = (
 
 
 def _format_lat(lat: float) -> str:
-    """Latitude with an explicit N/S hemisphere label."""
     hemi = "N" if lat >= 0 else "S"
-    return f"{abs(lat):.4f} °{hemi}"
+    return f"{abs(lat):.4f} B0{hemi}".replace("B0", "\u00b0")
 
 
 def _format_lon(lon: float) -> str:
-    """Longitude with an explicit E/W hemisphere label.
-
-    Study-region longitudes are negative (western hemisphere), so a bare "°E"
-    on a negative value is misleading; use the magnitude with the correct side.
-    """
     hemi = "E" if lon >= 0 else "W"
-    return f"{abs(lon):.4f} °{hemi}"
+    return f"{abs(lon):.4f} \u00b0{hemi}"
 
 
 def _page_setup() -> None:
     st.set_page_config(
-        page_title="ShelfCast candidate-profile temperature viewer",
-        page_icon="🌊",
+        page_title="ShelfCast reveal loop",
+        page_icon="\U0001F30A",
         layout="wide",
     )
-    st.title("🌊 ShelfCast")
+    st.title("\U0001F30A ShelfCast")
     st.caption(
-        "A local, read-only view of the Stage 3 temperature predictor. "
-        "Historical replay of eMOLT candidate profiles, not a live or future forecast."
+        "A local historical replay of the Stage 3 temperature predictor. The "
+        "model was trained only on candidate profiles that ended before the "
+        "2024-08-06 00:00 UTC cutoff; the hidden profiles you can reveal started "
+        "on or after it. This is a replay, not a live or future forecast."
     )
 
 
+# -- cached, pre-reveal loaders (never touch the heldout file) --------------
 @st.cache_resource(show_spinner=False)
 def _load_model():
     return viewer.load_fitted_model()
@@ -100,17 +114,39 @@ def _load_candidate_sites() -> pd.DataFrame:
     return viewer.load_candidate_sites()
 
 
-def _render_map(train_df: pd.DataFrame, sites_df: pd.DataFrame) -> None:
+def _predicted_curve(model_obj, site: dict, label: str) -> pd.DataFrame:
+    table = viewer.predict_site_table(model_obj, site, list(DEFAULT_DEPTH_GRID))
+    table["series"] = label
+    return table
+
+
+def _render_map(
+    train_df: pd.DataFrame,
+    sites_df: pd.DataFrame,
+    nearby_marker: dict | None = None,
+) -> None:
     st.subheader("Locations")
-    st.markdown(
+    legend = (
         "Recorded positions only. "
         f"<span style='color:rgb({SEA_FOAM[0]},{SEA_FOAM[1]},{SEA_FOAM[2]})'>"
-        "● training locations</span> and "
+        "\u25cf training locations</span> and "
         f"<span style='color:rgb({CANDIDATE_GOLD[0]},{CANDIDATE_GOLD[1]},{CANDIDATE_GOLD[2]})'>"
-        "● candidate profiles</span> (replay sites). Candidate markers are "
-        "**provisional candidate profiles**, never verified fishing tows or casts.",
-        unsafe_allow_html=True,
+        "\u25cf candidate profiles</span> (replay sites)."
     )
+    if nearby_marker is not None:
+        legend += (
+            " After a reveal, the nearby still-hidden site is recolored by its "
+            f"predicted-temperature change at {NEARBY_DEPTH:.0f} m "
+            f"(<span style='color:rgb({WARMER_RED[0]},{WARMER_RED[1]},{WARMER_RED[2]})'>"
+            "\u25cf warmer</span> / "
+            f"<span style='color:rgb({COOLER_BLUE[0]},{COOLER_BLUE[1]},{COOLER_BLUE[2]})'>"
+            "\u25cf cooler</span>)."
+        )
+    legend += (
+        " Candidate markers are **provisional candidate profiles**, never "
+        "verified fishing tows or casts."
+    )
+    st.markdown(legend, unsafe_allow_html=True)
 
     all_lat = pd.concat([train_df["latitude"], sites_df["latitude"]])
     all_lon = pd.concat([train_df["longitude"], sites_df["longitude"]])
@@ -137,13 +173,37 @@ def _render_map(train_df: pd.DataFrame, sites_df: pd.DataFrame) -> None:
         get_radius=320,
         pickable=True,
     )
+    layers = [training_layer, candidate_layer]
+    tooltip = {"text": "candidate profile {profile_id}"}
+
+    if nearby_marker is not None:
+        warmer = nearby_marker["delta"] >= 0
+        color = WARMER_RED if warmer else COOLER_BLUE
+        marker_df = pd.DataFrame([nearby_marker])
+        nearby_layer = pdk.Layer(
+            "ScatterplotLayer",
+            data=marker_df,
+            get_position="[longitude, latitude]",
+            get_fill_color=[color[0], color[1], color[2], 240],
+            get_radius=420,
+            pickable=True,
+        )
+        layers.append(nearby_layer)
+        tooltip = {
+            "text": (
+                "nearby candidate profile {profile_id}\n"
+                f"predicted @ {NEARBY_DEPTH:.0f} m: "
+                "{original_label} \u2192 {updated_label} \u00b0C"
+            )
+        }
+
     deck = pdk.Deck(
         map_style="light",
         initial_view_state=view_state,
-        layers=[training_layer, candidate_layer],
-        tooltip={"text": "candidate profile {profile_id}"},
+        layers=layers,
+        tooltip=tooltip,
     )
-    st.pydeck_chart(deck, use_container_width=True)
+    st.pydeck_chart(deck, width="stretch")
 
 
 def _render_prediction(model_obj, site: dict, profile_id: int) -> None:
@@ -153,55 +213,141 @@ def _render_prediction(model_obj, site: dict, profile_id: int) -> None:
     col_c.metric("UTC start time", site["start_time"].strftime("%Y-%m-%d %H:%M:%SZ"))
 
     table = viewer.predict_site_table(model_obj, site, list(DEFAULT_DEPTH_GRID))
-
-    st.subheader(f"Predicted temperature at depth — candidate profile {profile_id}")
+    st.subheader(f"Predicted temperature at depth \u2014 candidate profile {profile_id}")
     st.caption(
-        "Model predictions only. No forecast, uncertainty, confidence, or "
+        "Model predictions only. Requested prediction levels (not a claim about "
+        "the actual bottom depth). No forecast, uncertainty, confidence, or "
         "measurement-location recommendation is implied."
     )
-
     chart = (
         alt.Chart(table)
-        .mark_line(
-            point=True, color=f"rgb({DEEP_NAVY[0]},{DEEP_NAVY[1]},{DEEP_NAVY[2]})"
-        )
+        .mark_line(point=True, color=f"rgb({DEEP_NAVY[0]},{DEEP_NAVY[1]},{DEEP_NAVY[2]})")
         .encode(
-            x=alt.X("temperature_c:Q", title="Predicted temperature (°C)"),
-            y=alt.Y(
-                "depth_m:Q",
-                title="Requested prediction depth (m)",
-                scale=alt.Scale(reverse=True),
-            ),
-            tooltip=[
-                alt.Tooltip("depth_m:Q", title="Depth (m)"),
-                alt.Tooltip("temperature_c:Q", title="Temp (°C)", format=".3f"),
-            ],
+            x=alt.X("temperature_c:Q", title="Predicted temperature (\u00b0C)"),
+            y=alt.Y("depth_m:Q", title="Requested prediction depth (m)",
+                    scale=alt.Scale(reverse=True)),
+            tooltip=[alt.Tooltip("depth_m:Q", title="Depth (m)"),
+                     alt.Tooltip("temperature_c:Q", title="Temp (\u00b0C)", format=".3f")],
         )
-        .properties(height=380)
+        .properties(height=360)
+    )
+    st.altair_chart(chart, width="stretch")
+
+
+def _render_selected_reveal_chart(
+    model_obj, temp_model, site: dict, revealed_df: pd.DataFrame, profile_id: int
+) -> None:
+    original = _predicted_curve(model_obj, site, "original prediction")
+    updated = _predicted_curve(temp_model, site, "updated prediction")
+    curves = pd.concat([original, updated], ignore_index=True)
+
+    lines = (
+        alt.Chart(curves)
+        .mark_line(point=True)
+        .encode(
+            x=alt.X("temperature_c:Q", title="Temperature (\u00b0C)"),
+            y=alt.Y("depth_m:Q", title="Depth (m)", scale=alt.Scale(reverse=True)),
+            color=alt.Color("series:N", title=None,
+                            scale=alt.Scale(
+                                domain=["original prediction", "updated prediction"],
+                                range=[f"rgb({DEEP_NAVY[0]},{DEEP_NAVY[1]},{DEEP_NAVY[2]})",
+                                       f"rgb({UPDATED_TEAL[0]},{UPDATED_TEAL[1]},{UPDATED_TEAL[2]})"])),
+            tooltip=[alt.Tooltip("series:N"), alt.Tooltip("depth_m:Q", title="Depth (m)"),
+                     alt.Tooltip("temperature_c:Q", title="Temp (\u00b0C)", format=".3f")],
+        )
+    )
+    actual = revealed_df.rename(columns={"temperature_c": "temp", "depth_m": "depth"})
+    points = (
+        alt.Chart(actual)
+        .mark_point(filled=True, size=70, shape="diamond",
+                    color=f"rgb({ACTUAL_CORAL[0]},{ACTUAL_CORAL[1]},{ACTUAL_CORAL[2]})")
+        .encode(
+            x=alt.X("temp:Q"),
+            y=alt.Y("depth:Q", scale=alt.Scale(reverse=True)),
+            tooltip=[alt.Tooltip("depth:Q", title="Recorded depth (m)"),
+                     alt.Tooltip("temp:Q", title="Actual temp (\u00b0C)", format=".3f")],
+        )
+    )
+    st.subheader(f"Revealed measurements \u2014 candidate profile {profile_id}")
+    st.caption(
+        "Coral diamonds are the revealed actual readings at their true recorded "
+        "depths (not snapped to the requested prediction levels). Lines are the "
+        "original and the temporary updated model predictions at the requested "
+        "prediction levels."
+    )
+    st.altair_chart((lines + points).properties(height=400), width="stretch")
+
+
+def _render_nearby(model_obj, temp_model, nearby_site: dict, nearby_id: int) -> dict:
+    original = _predicted_curve(model_obj, nearby_site, "original prediction")
+    updated = _predicted_curve(temp_model, nearby_site, "updated prediction")
+    curves = pd.concat([original, updated], ignore_index=True)
+    delta = reveal.nearby_site_delta(model_obj, temp_model, nearby_site, NEARBY_DEPTH)
+
+    st.subheader(f"Nearby still-hidden candidate profile {nearby_id}")
+    st.caption(
+        "Predictions only \u2014 this site's actual measurements are never read. "
+        f"The map marker and the metric below show the predicted change at "
+        f"{NEARBY_DEPTH:.0f} m."
     )
     left, right = st.columns([3, 2])
-    left.altair_chart(chart, use_container_width=True)
-    display = table.rename(
-        columns={"depth_m": "Depth (m)", "temperature_c": "Predicted temp (°C)"}
+    chart = (
+        alt.Chart(curves)
+        .mark_line(point=True)
+        .encode(
+            x=alt.X("temperature_c:Q", title="Predicted temperature (\u00b0C)"),
+            y=alt.Y("depth_m:Q", title="Requested prediction depth (m)",
+                    scale=alt.Scale(reverse=True)),
+            color=alt.Color("series:N", title=None,
+                            scale=alt.Scale(
+                                domain=["original prediction", "updated prediction"],
+                                range=[f"rgb({DEEP_NAVY[0]},{DEEP_NAVY[1]},{DEEP_NAVY[2]})",
+                                       f"rgb({UPDATED_TEAL[0]},{UPDATED_TEAL[1]},{UPDATED_TEAL[2]})"])),
+            tooltip=[alt.Tooltip("series:N"), alt.Tooltip("depth_m:Q", title="Depth (m)"),
+                     alt.Tooltip("temperature_c:Q", title="Temp (\u00b0C)", format=".3f")],
+        )
+        .properties(height=360)
     )
-    right.dataframe(display, hide_index=True, use_container_width=True)
+    left.altair_chart(chart, width="stretch")
+    right.metric(
+        label=f"Predicted temp @ {NEARBY_DEPTH:.0f} m",
+        value=f"{delta['updated']:.3f} \u00b0C",
+        delta=f"{delta['delta']:+.3f} \u00b0C vs original",
+    )
+    right.caption(
+        f"Original {delta['original']:.3f} \u00b0C \u2192 updated "
+        f"{delta['updated']:.3f} \u00b0C after revealing the selected profile."
+    )
+    return {
+        "profile_id": nearby_id,
+        "latitude": nearby_site["latitude"],
+        "longitude": nearby_site["longitude"],
+        "delta": delta["delta"],
+        "original_label": f"{delta['original']:.3f}",
+        "updated_label": f"{delta['updated']:.3f}",
+    }
 
 
 def _render_context(metadata: dict) -> None:
     with st.expander("Sources, units, and limitations", expanded=True):
         st.markdown(
-            "- **Units:** temperature in degrees Celsius (°C), depth in metres (m).\n"
-            "- **Historical replay:** this view replays recorded eMOLT candidate "
-            "profiles from 1-7 Aug 2024. It is not a live reading or a future forecast.\n"
-            "- **Provisional candidate profiles:** groups are inferred from recorded "
-            "position and time proximity and are **not** verified fishing tows or casts.\n"
+            "- **Units:** temperature in degrees Celsius (\u00b0C), depth in metres (m).\n"
+            "- **Historical replay:** training candidate profiles ended before the "
+            "2024-08-06 00:00 UTC cutoff; the hidden profiles you can reveal started "
+            "on or after it. Not a live reading or a future forecast.\n"
+            "- **Provisional candidate profiles:** the starter eMOLT data omits the "
+            "`tow_id` and `segment_type` columns, so these groups are inferred from "
+            "recorded position and time proximity and are **not** verified fishing "
+            "tows or casts. They are never labeled as a tow or a cast.\n"
             "- **Unknown bottom depth:** the standard depths are requested prediction "
             "levels only; they do not establish the actual bottom depth at a site.\n"
+            "- **Temporary model:** the updated model after a reveal lives in memory "
+            "only and never overwrites the saved model.\n"
             f"- **Dataset attribution:** {ATTRIBUTION}"
         )
         st.caption(
             "Model: "
-            f"{metadata.get('feature_order')} · seed {metadata.get('random_state')} · "
+            f"{metadata.get('feature_order')} \u00b7 seed {metadata.get('random_state')} \u00b7 "
             f"trained on {metadata.get('n_rows')} readings across "
             f"{metadata.get('n_candidate_profiles')} candidate profiles."
         )
@@ -229,29 +375,118 @@ def main() -> None:
         st.stop()
         return
 
-    _render_map(train_df, sites_df)
+    # Initialize reveal session state once.
+    for key in reveal.REVEAL_STATE_KEYS:
+        st.session_state.setdefault(key, None)
 
     st.subheader("Select a candidate profile")
     profile_ids = sorted(int(p) for p in sites_df["profile_id"].unique())
-    profile_id = st.selectbox(
+    profile_id = int(st.selectbox(
         "Candidate profile id",
         options=profile_ids,
         help="A provisional candidate profile from the Stage 2 replay set.",
-    )
+    ))
+
+    # Top-of-rerun guard: discard any reveal that is not for the current id, so a
+    # selection change returns to the original saved model and pre-reveal view.
+    reveal.reset_reveal_state(st.session_state, profile_id)
 
     try:
-        site = lookup_candidate_site(int(profile_id))
+        site = lookup_candidate_site(profile_id)
     except (KeyError, ValueError) as exc:
         st.error(f"Candidate-profile lookup failed: {exc}")
         st.stop()
         return
 
-    _render_prediction(model_obj, site, int(profile_id))
+    # Reveal / reset controls.
+    c1, c2, _ = st.columns([1, 1, 3])
+    reveal_clicked = c1.button("Reveal actual measurements", type="primary")
+    reset_clicked = c2.button("Reset replay")
+    if reset_clicked:
+        reveal.reset_reveal_state(st.session_state, None)
+
+    # Only this branch opens the heldout file, and only for the selected id.
+    if reveal_clicked:
+        try:
+            revealed = reveal.read_revealed_profile(profile_id)
+        except FileNotFoundError:
+            st.error(
+                "The hidden measurements file (Data/splits/heldout_points.csv) "
+                "was not found. Run the Stage 2 split first:\n\n"
+                "    python Scripts/split_replay.py"
+            )
+            revealed = None
+        except KeyError:
+            st.error(
+                f"No hidden measurements found for candidate profile {profile_id}."
+            )
+            revealed = None
+        if revealed is not None and len(revealed) == 0:
+            st.warning(
+                f"No actual measurements are available for candidate profile {profile_id}."
+            )
+            revealed = None
+        if revealed is not None:
+            try:
+                train_rows = reveal.load_training_rows()
+                temp_model = reveal.fit_temporary_model(train_rows, revealed)
+            except (ValueError, OSError) as exc:
+                st.error(f"The temporary model could not be fit: {exc}")
+            else:
+                st.session_state["revealed_profile_id"] = profile_id
+                st.session_state["revealed_df"] = revealed
+                st.session_state["temp_model"] = temp_model
+
+    revealed_df = st.session_state.get("revealed_df")
+    temp_model = st.session_state.get("temp_model")
+    has_reveal = (
+        st.session_state.get("revealed_profile_id") == profile_id
+        and revealed_df is not None
+        and temp_model is not None
+    )
+
+    nearby_marker = None
+    if has_reveal:
+        after_time = reveal.revealed_final_time(revealed_df)
+        nearby_id = reveal.nearest_candidate_site(profile_id, sites_df, after_time)
+        if nearby_id is not None:
+            nearby_site = lookup_candidate_site(int(nearby_id))
+            nearby_marker = _render_nearby_prep(model_obj, temp_model, nearby_site, int(nearby_id))
+
+    _render_map(train_df, sites_df, nearby_marker)
+
+    if has_reveal:
+        _render_selected_reveal_chart(model_obj, temp_model, site, revealed_df, profile_id)
+        if nearby_marker is not None:
+            _render_nearby(model_obj, temp_model,
+                           lookup_candidate_site(int(nearby_marker["profile_id"])),
+                           int(nearby_marker["profile_id"]))
+        else:
+            st.info(
+                "No eligible nearby site (need a still-hidden candidate at least "
+                f"{reveal.MIN_NEARBY_KM:.0f} km away that starts after this "
+                "profile's final recorded measurement)."
+            )
+    else:
+        _render_prediction(model_obj, site, profile_id)
+
     _render_context(metadata)
+
+
+def _render_nearby_prep(model_obj, temp_model, nearby_site: dict, nearby_id: int) -> dict:
+    """Compute the nearby marker payload (predictions only) for the map layer."""
+    delta = reveal.nearby_site_delta(model_obj, temp_model, nearby_site, NEARBY_DEPTH)
+    return {
+        "profile_id": nearby_id,
+        "latitude": nearby_site["latitude"],
+        "longitude": nearby_site["longitude"],
+        "delta": delta["delta"],
+        "original_label": f"{delta['original']:.3f}",
+        "updated_label": f"{delta['updated']:.3f}",
+    }
 
 
 if __name__ == "__main__":
     main()
 else:
-    # Streamlit executes the module top-to-bottom under `streamlit run`.
     main()

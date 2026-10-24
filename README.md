@@ -3,10 +3,12 @@
 ShelfCast will eventually estimate coastal ocean temperature at different
 depths and suggest where a new measurement would be most useful. This
 repository currently contains **Stage 1 (data foundation)**, **Stage 2
-(chronological replay split)**, **Stage 3 (a first temperature predictor)**, and
-**Stage 4 (a local, read-only viewer)**. Stages 1-3 are complete; Stage 4 is
-active. There is still no deployment or hosting, no retraining, and no
-uncertainty, forecast, or measurement-location recommendation.
+(chronological replay split)**, **Stage 3 (a first temperature predictor)**,
+**Stage 4 (a local, read-only viewer)**, and **Stage 5 (a controlled reveal
+loop)**. Stages 1-5 are complete. There is still no deployment
+or hosting, no next-site recommendation, and no uncertainty or forecast claim.
+Stage 5 does add a temporary, in-memory model update after an explicit reveal,
+but it never overwrites the saved model.
 
 ## What Stage 1 does
 
@@ -192,6 +194,59 @@ streamlit run app.py
 
 The app uses libraries already in `requirements.txt` (Streamlit, pydeck,
 altair). Install them with `python -m pip install -r requirements.txt` if needed.
+
+## Stage 5: controlled reveal loop
+
+Stage 5 extends the Stage 4 viewer with a controlled **reveal loop**. You still
+select a provisional candidate profile and see the Stage 3 predicted
+temperature curve, but now you can press **Reveal actual measurements** to
+reveal that one profile's hidden historical readings, then press **Reset
+replay** to return to the pre-reveal view.
+
+On reveal the app:
+
+- overlays the revealed profile's real temperature readings at their **true
+  recorded depths** (not snapped to the requested prediction levels),
+- fits a **temporary, in-memory model** from the original training rows plus
+  only that one revealed profile, and charts the original vs updated predicted
+  curves for the selected site,
+- picks one **nearby still-hidden candidate site** and shows its original vs
+  updated predicted curves, a recolored map marker, and a numeric prediction
+  change at the 20 m requested prediction level.
+
+The nearby site is the geographically nearest candidate (by great-circle
+distance in **kilometres**) that is both **at least 1 km away** from the
+selected site and **starts after** the revealed profile's final recorded
+measurement. If none qualifies, the app shows a "no eligible nearby site"
+message. The nearby site's own hidden measurements are never read -- its
+before/after values come from model predictions only.
+
+Stage 5 keeps the Stage 3/4 **data boundary**. `Data/splits/heldout_points.csv`
+is opened only by `shelfcast.reveal.read_revealed_profile`, only after the
+reveal click, and only the selected profile's rows are ever returned, used,
+stored, or shown. Startup, the map, caching, and site selection never open it,
+and nothing reads the hidden columns of `Data/processed/profile_summary.csv`.
+The temporary model lives in memory only and **never overwrites**
+`Results/model.joblib`; changing the selected profile or pressing Reset replay
+discards the revealed data and returns to the saved model. If the heldout file
+is missing, the app reports it and tells you to run the Stage 2 split. This
+remains a historical replay (the model was trained only on candidate profiles
+that ended before the 2024-08-06 00:00 UTC cutoff; the revealed profiles started
+on or after it), with no uncertainty band, next-site recommendation, forecast,
+or deployment.
+
+### Run it
+
+First make sure a model and the Stage 2 splits exist (`python
+Scripts/split_replay.py` then `python Scripts/train_model.py`), then from the
+project root:
+
+```
+streamlit run app.py
+```
+
+The app uses libraries already in `requirements.txt` (Streamlit, pydeck,
+altair).
 
 ## Tests
 

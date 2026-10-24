@@ -1,4 +1,4 @@
-﻿"""Stage 1 configuration constants.
+"""Stage 1 configuration constants.
 
 Holds all named constants for the ShelfCast Stage 1 pipeline. No logic lives
 here so that study parameters are explicit and consistently applied.
@@ -79,3 +79,11 @@ CANDIDATE_PROFILE_NOTE = (
     "Groups are provisional candidate profiles inferred from recorded position "
     "and time proximity; they are NOT verified fishing tows or casts."
 )
+
+# --------------------------------------------------------------------------
+# Stage 5 reveal-loop constant (additive; Stage 1-3 sections above unchanged)
+# --------------------------------------------------------------------------
+# Hidden heldout points. Opened ONLY by shelfcast.reveal.read_revealed_profile,
+# and only after the explicit "Reveal actual measurements" click, and only for
+# the selected profile_id's rows. No pre-reveal path may open this file.
+HELDOUT_POINTS_PATH = "Data/splits/heldout_points.csv"
