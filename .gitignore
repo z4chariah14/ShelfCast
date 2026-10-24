@@ -14,3 +14,6 @@ __pycache__/
 
 # Generated Stage 2 split outputs
 Data/splits/
+
+# Generated Stage 3 model + metadata artifacts
+Results/

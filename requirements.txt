@@ -1,2 +1,4 @@
 pandas==3.0.1
+scikit-learn==1.7.1
+joblib==1.5.3
 pytest==9.1.1

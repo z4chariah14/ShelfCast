@@ -6,17 +6,19 @@ ShelfCast will eventually estimate coastal ocean temperature at different
 depths and suggest where a new measurement would be most useful. The project
 is being built in stages.
 
-## Current stage: Stage 1 complete; Stage 2 active
+## Current stage: Stage 1 and 2 complete; Stage 3 active
 
-Stage 1 (the data foundation) is complete. Stage 2 (the chronological replay
-split) is the active stage. Stage 2 is limited to splitting the Stage 1
-candidate profiles into a training set and a hidden replay set at a fixed UTC
-cutoff, its four local output artifacts (`train_points.csv`,
-`heldout_points.csv`, `candidate_sites.csv`, `split_report.json`), the
-supporting documentation, and focused tests. Across Stage 1 and Stage 2 the
-project explicitly does **not** include:
+Stage 1 (the data foundation) and Stage 2 (the chronological replay split) are
+complete. Stage 3 (a first temperature predictor) is the active stage. Stage 3
+is limited to fitting a single regression model on the Stage 2 training
+candidate profiles (`Data/splits/train_points.csv`), a reusable prediction
+function, two command-line scripts (training and candidate-site prediction),
+the model artifacts written under `Results/`, the supporting documentation, and
+focused tests. Across Stage 1, Stage 2, and Stage 3 the project explicitly does
+**not** include:
 
-- any predictive or interpolation model
+- any forecast, uncertainty or confidence claim, or measurement-location
+  recommendation
 - any map or spatial visualization
 - any dashboard or UI
 - any deployment or hosting
@@ -34,6 +36,17 @@ position and time proximity.
 - Never present these groups as verified fishing tows or casts.
 - Use the wording "candidate profile" in outputs and docs, never "tow" or "cast".
 - Output artifacts must not contain any tow, cast, or segment-type label.
+
+## Stage 3 data boundary (must hold while Stage 3 is active)
+
+Stage 3 model-training and pre-reveal prediction code may read only the
+training points (`Data/splits/train_points.csv`) and the candidate-site table
+(`Data/splits/candidate_sites.csv`) as observational inputs, plus the model
+artifacts it writes under `Results/`. It must never open
+`Data/splits/heldout_points.csv` and must never read the hidden
+temperature/depth summary columns of `Data/processed/profile_summary.csv`.
+Requested prediction depths are requested prediction levels only; they do not
+establish the actual bottom depth at a site.
 
 ## Study region and grouping rules (Stage 1)
 

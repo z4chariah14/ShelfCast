@@ -40,3 +40,42 @@ SPLITS_DIR = "Data/splits"            # Stage 2 outputs
 
 # Candidate_Sites columns -- exactly these four, in this order (Req 4.1)
 CANDIDATE_SITE_COLUMNS = ["profile_id", "latitude", "longitude", "start_time"]
+
+# --------------------------------------------------------------------------
+# Stage 3 temperature-predictor constants (additive; Stage 1 and Stage 2
+# sections above are unchanged)
+# --------------------------------------------------------------------------
+# A fixed, declared UTC reference instant used to convert a UTC time into
+# hours for the model's time feature -- Requirement 1.2
+TIME_REFERENCE = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+
+# Exactly four model inputs, in fixed declared order -- Requirement 1.2
+FEATURE_ORDER = ["latitude", "longitude", "depth_m", "hours_since_reference"]
+
+# Model target column -- Requirement 1.3
+TARGET_COLUMN = "temperature_c"
+
+# Fixed, declared list of REQUESTED PREDICTION LEVELS (depths in metres at
+# which a prediction is requested) used when the caller supplies no depths.
+# These are requested prediction levels only; they do NOT establish or claim
+# the actual bottom depth at a site -- Requirements 4.2, 4.9
+DEFAULT_DEPTH_GRID = [5.0, 10.0, 20.0, 30.0, 50.0]
+
+# Fixed random seed for reproducible fits -- Requirements 1.4, 6.1
+RANDOM_STATE = 42
+
+# Stage 3 observational data inputs (the ONLY observational files Stage 3 may
+# open) -- Requirement 5.1
+TRAIN_POINTS_PATH = "Data/splits/train_points.csv"
+CANDIDATE_SITES_PATH = "Data/splits/candidate_sites.csv"
+
+# Stage 3 output artifacts under Results/ -- Requirements 3.2, 3.3
+RESULTS_DIR = "Results"
+MODEL_PATH = "Results/model.joblib"
+METADATA_PATH = "Results/model_metadata.json"
+
+# Candidate-profile integrity note recorded in the metadata report -- Req 3.3, 7.5
+CANDIDATE_PROFILE_NOTE = (
+    "Groups are provisional candidate profiles inferred from recorded position "
+    "and time proximity; they are NOT verified fishing tows or casts."
+)

@@ -2,9 +2,10 @@
 
 ShelfCast will eventually estimate coastal ocean temperature at different
 depths and suggest where a new measurement would be most useful. This
-repository currently contains **Stage 1 (data foundation)** and **Stage 2
-(chronological replay split)** — no model, map, dashboard, or deployment.
-Stage 1 is complete; Stage 2 is active.
+repository currently contains **Stage 1 (data foundation)**, **Stage 2
+(chronological replay split)**, and **Stage 3 (a first temperature
+predictor)** � no map, dashboard, or deployment. Stage 1 and 2 are complete;
+Stage 3 is active.
 
 ## What Stage 1 does
 
@@ -98,14 +99,72 @@ Written to `Data/splits/` (kept local, not tracked in Git):
 - `split_report.json` — per-set counts and UTC time ranges, the list of
   excluded spanning profiles, and the cutoff
 
+## Stage 3: first temperature predictor
+
+Stage 3 fits a first, working temperature predictor on the Stage 2 training
+**candidate profiles** and predicts ocean temperature at a given location, UTC
+time, and set of requested prediction depths. The model is an
+`ExtraTreesRegressor` (scikit-learn) with a fixed random seed, using exactly
+four inputs: latitude, longitude, depth in metres, and UTC time expressed as
+hours since a fixed reference instant.
+
+Stage 3 holds a strict **data boundary**: training and pre-reveal prediction
+code read only `Data/splits/train_points.csv` and
+`Data/splits/candidate_sites.csv` (plus the model artifacts it writes under
+`Results/`). It never opens `Data/splits/heldout_points.csv` and never reads the
+hidden temperature/depth summary columns of
+`Data/processed/profile_summary.csv`. Requested depths are requested prediction
+levels only; they do not establish the actual bottom depth at a site. Stage 3
+adds no forecasts, uncertainty claims, measurement recommendations, maps, UI, or
+deployment, and leaves Stage 1 and Stage 2 unchanged. These groups remain
+provisional candidate profiles inferred from recorded position and time
+proximity -- never verified fishing tows or casts.
+
+### Train the model
+
+From the project root:
+
+```
+python Scripts/train_model.py
+```
+
+Writes `Results/model.joblib` (the fitted model) and `Results/model_metadata.json`
+(feature order, time reference, random seed, training row and candidate-profile
+counts, and the candidate-profile integrity note).
+
+Options:
+
+- `--train` path to the training points (default `Data/splits/train_points.csv`)
+- `--model` output model path (default `Results/model.joblib`)
+- `--metadata` output metadata path (default `Results/model_metadata.json`)
+
+### Predict for a candidate site
+
+```
+python Scripts/predict_site.py --profile-id 4
+```
+
+Looks up the candidate profile's recorded latitude, longitude, and start time
+from `candidate_sites.csv`, predicts temperature at the default depth grid, and
+prints a structured JSON object with the `profile_id`, the UTC time, and ordered
+depth/temperature pairs.
+
+Options:
+
+- `--profile-id` candidate profile id to predict for (required)
+- `--depths` explicit requested prediction levels in metres (finite, > 0);
+  omit to use the default depth grid
+- `--model` path to the saved model (default `Results/model.joblib`)
+- `--sites` path to the candidate-sites table (default
+  `Data/splits/candidate_sites.csv`)
 ## Tests
 
 ```
 python -m pytest
 ```
 
-Runtime code depends only on pandas and the Python standard library. Running
-the tests additionally requires pytest.
+Runtime code depends on pandas, scikit-learn, and joblib (plus the Python
+standard library). Running the tests additionally requires pytest.
 
 ## Dataset attribution
 
