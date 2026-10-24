@@ -8,7 +8,7 @@ I wanted the model to face a real measurement it had not seen. The reveal makes 
 
 ## Try the replay
 
-1. Select a candidate profile on the map. The app shows the original temperature prediction at 5, 10, 20, 30, and 50 metres, plus the range predicted by five models.
+1. Choose a candidate profile in the selector. The map shows where training and candidate profiles were recorded; the app shows the selected site's temperature prediction at 5, 10, 20, 30, and 50 metres, plus the range predicted by five models.
 2. Click **Reveal actual measurements**. The real readings appear at their recorded depths. A temporary model learns from that one profile, and the app shows how its predictions change at the selected site and a nearby still-hidden site.
 3. Look at **Suggested next measurement**. Among eligible later profiles, ShelfCast selects the one where the five models disagree most at 5 and 10 metres.
 4. Click **Reset replay** or choose another profile to start again.
