@@ -1,0 +1,13 @@
+﻿# Generated Stage 1 outputs
+Data/processed/
+
+# Local raw dataset (not redistributed)
+Data/raw/emolt.zip
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Keep .kiro/ tracked (specs, steering, hooks)
+!.kiro/
