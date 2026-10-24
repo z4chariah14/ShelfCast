@@ -13,9 +13,9 @@ LON_MIN = -70.5
 LON_MAX = -69.5
 
 # Retention + grouping constants -- Requirement 1.2-1.5
-MIN_READINGS = 10                   # Requirement 1.2
-MIN_DEPTH_RANGE_M = 10              # Requirement 1.3
-MAX_SPAN = timedelta(hours=1)       # Requirement 1.4
+MIN_READINGS = 10  # Requirement 1.2
+MIN_DEPTH_RANGE_M = 10  # Requirement 1.3
+MAX_SPAN = timedelta(hours=1)  # Requirement 1.4
 DEFAULT_GAP = timedelta(minutes=5)  # Requirement 1.5
 
 # Valid physical coordinate bounds (global sanity bounds, distinct from study region)
@@ -35,8 +35,8 @@ from datetime import datetime, timezone
 # Fixed replay cutoff -- Requirement 2.1
 CUTOFF = datetime(2024, 8, 6, 0, 0, 0, tzinfo=timezone.utc)
 
-PROCESSED_DIR = "Data/processed"      # Stage 1 outputs (Stage 2 input)
-SPLITS_DIR = "Data/splits"            # Stage 2 outputs
+PROCESSED_DIR = "Data/processed"  # Stage 1 outputs (Stage 2 input)
+SPLITS_DIR = "Data/splits"  # Stage 2 outputs
 
 # Candidate_Sites columns -- exactly these four, in this order (Req 4.1)
 CANDIDATE_SITE_COLUMNS = ["profile_id", "latitude", "longitude", "start_time"]
@@ -87,3 +87,21 @@ CANDIDATE_PROFILE_NOTE = (
 # and only after the explicit "Reveal actual measurements" click, and only for
 # the selected profile_id's rows. No pre-reveal path may open this file.
 HELDOUT_POINTS_PATH = "Data/splits/heldout_points.csv"
+
+# --------------------------------------------------------------------------
+# Stage 6 spread + suggestion constants (additive; Stage 1-5 sections above
+# are unchanged)
+# --------------------------------------------------------------------------
+# Exactly five reproducible spread models. Each is fit by shelfcast.spread on a
+# profile-level bootstrap resample of the training candidate profiles (whole
+# profiles, never individual readings). The spread is an EXPLORATORY measure,
+# NOT a calibrated confidence interval -- Requirements 1.1, 1.3, 2.4
+SPREAD_N_MODELS = 5
+
+# Fixed, declared per-model random seeds so the five spread models and their
+# predictions are reproducible run to run -- Requirement 1.3
+SPREAD_SEEDS = [101, 202, 303, 404, 505]
+
+# The disagreement score is computed from the five models' predictions at these
+# shallow requested prediction levels only -- Requirement 3.1
+SPREAD_SCORE_DEPTHS = [5.0, 10.0]

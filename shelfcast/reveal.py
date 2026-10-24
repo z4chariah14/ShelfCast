@@ -45,7 +45,15 @@ REVEALED_COLUMNS = [
 FIT_SOURCE_COLUMNS = ["latitude", "longitude", "depth_m", "time", "temperature_c"]
 
 # Session-state keys the reveal holds, all bound to the selected profile_id.
-REVEAL_STATE_KEYS = ("revealed_profile_id", "revealed_df", "temp_model")
+# "spread_models_updated" holds the Stage 6 updated five-model spread; it is
+# reveal-scoped, so clearing it alongside the Stage 5 keys means a selection
+# change or "Reset replay" discards the updated spread and suggestion too.
+REVEAL_STATE_KEYS = (
+    "revealed_profile_id",
+    "revealed_df",
+    "temp_model",
+    "spread_models_updated",
+)
 
 # The single requested prediction level used for the nearby-site map/delta.
 NEARBY_DEPTH_M = 20.0
@@ -74,9 +82,7 @@ def read_revealed_profile(
     frame = pd.read_csv(path, usecols=REVEALED_COLUMNS)
     selected = frame[frame["profile_id"] == profile_id].copy()
     if len(selected) == 0:
-        raise KeyError(
-            f"profile_id {profile_id} not found in heldout points"
-        )
+        raise KeyError(f"profile_id {profile_id} not found in heldout points")
     return selected[REVEALED_COLUMNS].reset_index(drop=True)
 
 

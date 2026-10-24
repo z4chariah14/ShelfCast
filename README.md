@@ -4,11 +4,14 @@ ShelfCast will eventually estimate coastal ocean temperature at different
 depths and suggest where a new measurement would be most useful. This
 repository currently contains **Stage 1 (data foundation)**, **Stage 2
 (chronological replay split)**, **Stage 3 (a first temperature predictor)**,
-**Stage 4 (a local, read-only viewer)**, and **Stage 5 (a controlled reveal
-loop)**. Stages 1-5 are complete. There is still no deployment
-or hosting, no next-site recommendation, and no uncertainty or forecast claim.
-Stage 5 does add a temporary, in-memory model update after an explicit reveal,
-but it never overwrites the saved model.
+**Stage 4 (a local, read-only viewer)**, **Stage 5 (a controlled reveal
+loop)**, and **Stage 6 (a five-model spread and a suggested next
+measurement)**. Stages 1-5 are complete and Stage 6 is the active stage. There
+is still no deployment or hosting, no forecast, no calibrated uncertainty or
+confidence interval, and no oxygen, weather, or new research model. Stage 5 adds
+a temporary, in-memory model update after an explicit reveal, and Stage 6 adds
+five in-memory spread models and one suggested candidate profile to test — none
+of which ever overwrite the saved model.
 
 ## What Stage 1 does
 
@@ -248,15 +251,64 @@ streamlit run app.py
 The app uses libraries already in `requirements.txt` (Streamlit, pydeck,
 altair).
 
+## Stage 6: five-model spread and a suggested next measurement
+
+Stage 6 extends the Stage 5 viewer with two exploratory views, keeping the
+Stage 3 prediction and the Stage 5 reveal charts intact. A single new importable
+module, `shelfcast/spread.py`, holds all Stage 6 logic.
+
+- **Five-model spread.** It fits exactly five reproducible versions of the
+  existing ExtraTrees model by resampling **whole training candidate profiles**
+  with replacement — never individual readings — using fixed per-model seeds, so
+  the five models and their predictions are reproducible run to run. At the
+  selected site the app shades the minimum-to-maximum range of the five models'
+  predicted curves. This is **spread across five models — an exploratory
+  measure, not a calibrated confidence interval.**
+- **Suggested next measurement.** It scores eligible historical candidate
+  profiles from `candidate_sites.csv` by how much the five models disagree at
+  the 5 m and 10 m requested prediction levels, and suggests the single
+  highest-disagreement candidate (ties broken by lowest `profile_id`), with its
+  score and a plain-language reason. Before a reveal, a candidate must start
+  after the selected site's start time; after a reveal, after the revealed
+  profile's final measurement. The selected site and any site within 1 km are
+  excluded. The result is **a profile to test, never an optimal site or an
+  operational boat route.**
+
+After an explicit reveal, the spread and the suggestion are recomputed from the
+training profiles plus **only** the one selected revealed profile (that revealed
+profile is included in every updated model). The updated models live in memory
+only; a selection change or **Reset replay** discards them and returns the app
+to the pre-reveal spread and suggestion.
+
+Stage 6 reuses `fit_model` and `predict_temperatures` unchanged and keeps the
+Stage 1-5 **data boundary**: `shelfcast/spread.py` opens no data files of its
+own — it receives only in-memory frames (the training rows and, after a reveal,
+only the one revealed profile's rows already read by `shelfcast/reveal.py`) plus
+the candidate-site coordinate/time columns. It never opens `heldout_points.csv`
+or the hidden columns of `profile_summary.csv`, no spread or updated model is
+written to disk or over `Results/model.joblib`, the suggestion is computed from
+predictions only, and the study region, chronological split,
+provisional-candidate-profile wording, historical-replay framing, and
+unknown-bottom-depth caveat are all preserved. Stage 6 adds no forecast,
+calibrated uncertainty, oxygen, weather, new research model, or deployment.
+
+### Run it
+
+Same launch as Stage 4/5 (a model and the Stage 2 splits must exist):
+
+```
+streamlit run app.py
+```
+
 ## Tests
 
 ```
 python -m pytest
 ```
 
-Runtime code depends on pandas, scikit-learn, and joblib (plus the Python
-standard library). The Stage 4 viewer additionally depends on Streamlit, pydeck,
-and altair. Running the tests additionally requires pytest.
+Runtime code depends on pandas, numpy, scikit-learn, and joblib (plus the Python
+standard library). The Stage 4-6 viewer additionally depends on Streamlit,
+pydeck, and altair. Running the tests additionally requires pytest.
 
 ## Dataset attribution
 

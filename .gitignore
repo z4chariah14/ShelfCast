@@ -17,3 +17,7 @@ Data/splits/
 
 # Generated Stage 3 model + metadata artifacts
 Results/
+
+# Local Streamlit run logs (never committed)
+st_out.log
+st_err.log
