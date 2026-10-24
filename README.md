@@ -2,8 +2,9 @@
 
 ShelfCast will eventually estimate coastal ocean temperature at different
 depths and suggest where a new measurement would be most useful. This
-repository currently contains **Stage 1: the data foundation only** — no
-model, map, dashboard, or deployment.
+repository currently contains **Stage 1 (data foundation)** and **Stage 2
+(chronological replay split)** — no model, map, dashboard, or deployment.
+Stage 1 is complete; Stage 2 is active.
 
 ## What Stage 1 does
 
@@ -50,6 +51,52 @@ Options:
 - `--input` path to the raw ZIP (default `Data/raw/emolt.zip`)
 - `--output` output directory (default `Data/processed`)
 - `--gap-minutes` consecutive-gap threshold in minutes (default 5)
+
+## Stage 2: chronological replay split
+
+Stage 2 splits the Stage 1 **provisional candidate profiles** into a training
+set and a hidden replay set at a fixed UTC cutoff (`2024-08-06T00:00:00Z`).
+Each candidate profile is classified as a whole using its recorded start and
+end times:
+
+- a profile that **ends before** the cutoff is training data,
+- a profile that **starts at or after** the cutoff is hidden replay data,
+- a profile that **spans** the cutoff (including one whose end time is exactly
+  the cutoff) is excluded from both sets and reported.
+
+A profile's readings are never divided across sets. These groups remain
+provisional candidate profiles inferred from recorded position and time
+proximity — they are never verified fishing tows or casts.
+
+Before writing anything, Stage 2 runs integrity checks and aborts (writing no
+files, exiting non-zero) if any fails: the summary and point profile ids must
+match, each profile id must appear once with summary times equal to its
+earliest/latest readings, the training and held-out id sets must be disjoint,
+and the candidate-sites file must carry no hidden measurement columns.
+
+### Run it
+
+From the project root:
+
+```
+python Scripts/split_replay.py
+```
+
+Options:
+
+- `--processed` path to the Stage 1 outputs (default `Data/processed`)
+- `--output` / `--splits` output directory (default `Data/splits`)
+
+### Stage 2 outputs
+
+Written to `Data/splits/` (kept local, not tracked in Git):
+
+- `train_points.csv` — full readings for the training candidate profiles
+- `heldout_points.csv` — full readings for the hidden replay candidate profiles
+- `candidate_sites.csv` — replay sites, with only `profile_id, latitude,
+  longitude, start_time` (no temperature, depth, or other hidden measurements)
+- `split_report.json` — per-set counts and UTC time ranges, the list of
+  excluded spanning profiles, and the cutoff
 
 ## Tests
 

@@ -6,18 +6,23 @@ ShelfCast will eventually estimate coastal ocean temperature at different
 depths and suggest where a new measurement would be most useful. The project
 is being built in stages.
 
-## Current stage: Stage 1 — data foundation ONLY
+## Current stage: Stage 1 complete; Stage 2 active
 
-Stage 1 is limited to the data pipeline, its three output artifacts, the
-supporting documentation, and focused tests. Stage 1 explicitly does **not**
-include:
+Stage 1 (the data foundation) is complete. Stage 2 (the chronological replay
+split) is the active stage. Stage 2 is limited to splitting the Stage 1
+candidate profiles into a training set and a hidden replay set at a fixed UTC
+cutoff, its four local output artifacts (`train_points.csv`,
+`heldout_points.csv`, `candidate_sites.csv`, `split_report.json`), the
+supporting documentation, and focused tests. Across Stage 1 and Stage 2 the
+project explicitly does **not** include:
 
 - any predictive or interpolation model
 - any map or spatial visualization
 - any dashboard or UI
 - any deployment or hosting
 
-Do not add those capabilities while working within Stage 1 scope.
+Do not add those capabilities while working within the current stage scope, and
+do not expand the Stage 1 study region.
 
 ## Data integrity rule (must hold across all stages)
 

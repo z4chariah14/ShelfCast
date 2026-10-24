@@ -26,3 +26,17 @@ VALID_LON_MAX = 180.0
 
 REQUIRED_COLUMNS = ["time", "latitude", "longitude", "depth_m", "temperature_c"]
 SOURCE_CSV_NAME = "data.csv"
+
+# --------------------------------------------------------------------------
+# Stage 2 chronological-split constants (additive; Stage 1 above is unchanged)
+# --------------------------------------------------------------------------
+from datetime import datetime, timezone
+
+# Fixed replay cutoff -- Requirement 2.1
+CUTOFF = datetime(2024, 8, 6, 0, 0, 0, tzinfo=timezone.utc)
+
+PROCESSED_DIR = "Data/processed"      # Stage 1 outputs (Stage 2 input)
+SPLITS_DIR = "Data/splits"            # Stage 2 outputs
+
+# Candidate_Sites columns -- exactly these four, in this order (Req 4.1)
+CANDIDATE_SITE_COLUMNS = ["profile_id", "latitude", "longitude", "start_time"]

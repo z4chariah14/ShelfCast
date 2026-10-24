@@ -11,3 +11,6 @@ __pycache__/
 
 # Keep .kiro/ tracked (specs, steering, hooks)
 !.kiro/
+
+# Generated Stage 2 split outputs
+Data/splits/
