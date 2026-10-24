@@ -671,8 +671,6 @@ def main() -> None:
                 model_obj, temp_model, nearby_site, int(nearby_id)
             )
 
-    _render_map(train_df, sites_df, site, profile_id, nearby_marker)
-
     # Stage 6 spread + suggestion. Before a reveal these use the cached five
     # pre-reveal models and the selected site's recorded start time as the
     # eligibility cutoff. After a reveal they use five UPDATED models fit from
@@ -724,6 +722,10 @@ def main() -> None:
             "The five-model spread and the suggestion are unavailable: "
             f"{spread_error}"
         )
+
+    # Map rendered after the results so the charts are visible immediately on
+    # press (no scrolling past a tall map to reach the prediction/reveal output).
+    _render_map(train_df, sites_df, site, profile_id, nearby_marker)
 
     _render_context(metadata)
 
