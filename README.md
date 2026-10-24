@@ -3,9 +3,10 @@
 ShelfCast will eventually estimate coastal ocean temperature at different
 depths and suggest where a new measurement would be most useful. This
 repository currently contains **Stage 1 (data foundation)**, **Stage 2
-(chronological replay split)**, and **Stage 3 (a first temperature
-predictor)** — no map, dashboard, or deployment. Stage 1 and 2 are complete;
-Stage 3 is active.
+(chronological replay split)**, **Stage 3 (a first temperature predictor)**, and
+**Stage 4 (a local, read-only viewer)**. Stages 1-3 are complete; Stage 4 is
+active. There is still no deployment or hosting, no retraining, and no
+uncertainty, forecast, or measurement-location recommendation.
 
 ## What Stage 1 does
 
@@ -157,6 +158,41 @@ Options:
 - `--model` path to the saved model (default `Results/model.joblib`)
 - `--sites` path to the candidate-sites table (default
   `Data/splits/candidate_sites.csv`)
+
+## Stage 4: local viewer
+
+Stage 4 adds a single local, read-only **Streamlit app** that makes the
+already-trained Stage 3 predictor explorable. It loads the saved model and
+metadata from `Results/`, shows the training locations and candidate-profile
+locations on a map, lets you select a candidate profile, and charts the Stage 3
+predicted temperatures at the declared standard depths for that site and its
+recorded UTC start time. It reuses the existing `predict_temperatures` function
+unchanged, so the chart matches the Stage 3 prediction CLI exactly.
+
+The app shows units (Â°C, metres), eMOLT source attribution, a "historical
+replay" note, and the provisional-candidate-profile and unknown-bottom-depth
+limitations. It is strictly read-only: it never retrains or modifies the model,
+and it adds no uncertainty estimate, next-site recommendation, forecast, or
+deployment.
+
+Stage 4 holds the same hard **data boundary** as Stage 3: it reads only
+`train_points.csv` and `candidate_sites.csv` (plus the `Results/` artifacts),
+never opens `heldout_points.csv` or `profile_summary.csv`, and never displays a
+hidden temperature or depth value. Map layers use recorded latitude/longitude
+only.
+
+### Run it
+
+First make sure a model exists (`python Scripts/train_model.py`), then from the
+project root:
+
+```
+streamlit run app.py
+```
+
+The app uses libraries already in `requirements.txt` (Streamlit, pydeck,
+altair). Install them with `python -m pip install -r requirements.txt` if needed.
+
 ## Tests
 
 ```
@@ -164,7 +200,8 @@ python -m pytest
 ```
 
 Runtime code depends on pandas, scikit-learn, and joblib (plus the Python
-standard library). Running the tests additionally requires pytest.
+standard library). The Stage 4 viewer additionally depends on Streamlit, pydeck,
+and altair. Running the tests additionally requires pytest.
 
 ## Dataset attribution
 

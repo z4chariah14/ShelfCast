@@ -2,3 +2,8 @@ pandas==3.0.1
 scikit-learn==1.7.1
 joblib==1.5.3
 pytest==9.1.1
+
+# Stage 4 local viewer (app.py)
+streamlit==1.59.2
+pydeck==0.9.3
+altair==6.2.2

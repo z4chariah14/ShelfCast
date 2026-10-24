@@ -1,0 +1,11 @@
+# ShelfCast Stage 4 viewer -- restrained ocean theme.
+[theme]
+base = "light"
+primaryColor = "#0c2c54"
+backgroundColor = "#f4f9fb"
+secondaryBackgroundColor = "#e3eef3"
+textColor = "#10263b"
+font = "sans serif"
+
+[browser]
+gatherUsageStats = false
